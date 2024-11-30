@@ -1,7 +1,7 @@
 [project]
-name = "pinto-portfolio"
+name = "pinto-analysis"
 version = "0.1.0"
-description = "Add your description here"
+description = "Analysis for pinto.money protocol"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
