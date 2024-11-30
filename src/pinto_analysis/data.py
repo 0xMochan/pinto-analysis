@@ -1,9 +1,5 @@
-import asyncio
-
 import pandas as pd
-from subgrounds import AsyncSubgrounds
-
-import ui
+from subgrounds import Subgrounds
 
 # PINTO = "https://graph.pinto.money"
 PINTOSTALK = "https://graph.pinto.money/pintostalk"
@@ -16,6 +12,9 @@ def calculate_flood_details(df: pd.DataFrame) -> pd.DataFrame:
     df["flood_silo_pinto"] /= 10**6
     df["flood_field_pinto"] /= 10**6
     df["delta_p"] /= 10**6
+
+    # helpful total flood calculation
+    df["total_flood_pinto"] = df["flood_silo_pinto"] + df["flood_field_pinto"]
 
     # We shift raining over to detect differences between raining regions
     df["raining"] = df["raining"].astype(int)
@@ -31,14 +30,10 @@ def calculate_flood_details(df: pd.DataFrame) -> pd.DataFrame:
             "price": "mean",
             "flood_silo_pinto": "sum",
             "flood_field_pinto": "sum",
+            "total_flood_pinto": "sum",
             # We mostly want a list of all the dps to chart later
             "delta_p": lambda dp: list(dp),
         }
-    )
-
-    # helpful total flood calculation
-    aggregated_chunks["total_flood_pinto"] = (
-        aggregated_chunks["flood_silo_pinto"] + aggregated_chunks["flood_field_pinto"]
     )
 
     # we re-index the dataframe to start from 1
@@ -55,21 +50,21 @@ def calculate_flood_details(df: pd.DataFrame) -> pd.DataFrame:
     return aggregated_chunks
 
 
-async def gather_data(subgraph: str) -> pd.DataFrame:
+def gather_data(subgraph: str) -> pd.DataFrame:
     """This function loads the subgraph and queries the data. Subgrounds automatically
     handles the pagination for us.
 
     TODO: replace 100000 with ALL when subgrounds supports it.
     """
 
-    async with AsyncSubgrounds() as sg:
-        pintostalk = await sg.load_subgraph(subgraph)
+    with Subgrounds() as sg:
+        pintostalk = sg.load_subgraph(subgraph)
         seasons = pintostalk.Query.seasons(
             first=100000, orderBy="season", orderDirection="asc"
         )
 
         # the subgraph still uses `beans` naming so we convert to `pinto`
-        return await sg.query_df(
+        return sg.query_df(
             [
                 seasons.season,
                 seasons.raining,
@@ -89,14 +84,30 @@ async def gather_data(subgraph: str) -> pd.DataFrame:
         )
 
 
-async def main():
-    """This drives the entire streamlit application"""
+def get_latest_season(subgraph: str) -> pd.Series:
+    """Grabs the latest season from the subgraph"""
 
-    df = await gather_data(PINTOSTALK)
-    flood_data = calculate_flood_details(df)
-
-    ui.main(df, flood_data)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    with Subgrounds() as sg:
+        pintostalk = sg.load_subgraph(subgraph)
+        seasons = pintostalk.Query.seasons(
+            first=1, orderBy="season", orderDirection="desc"
+        )
+        df = sg.query_df(
+            [
+                seasons.season,
+                seasons.raining,
+                seasons.price,
+                seasons.floodSiloBeans,
+                seasons.floodFieldBeans,
+                seasons.deltaB,
+            ],
+            columns=[
+                "season",
+                "raining",
+                "price",
+                "flood_silo_pinto",
+                "flood_field_pinto",
+                "delta_p",
+            ],
+        )
+        return df.iloc[0]

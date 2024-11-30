@@ -3,6 +3,15 @@ import plotly.graph_objects as go
 import streamlit as st
 from millify import millify
 
+from pinto_analysis.data import PINTOSTALK, calculate_flood_details, gather_data
+
+
+@st.cache_data(ttl="30min", show_spinner="Getting Data..")
+def get_data():
+    df = gather_data(PINTOSTALK)
+    flood_data = calculate_flood_details(df)
+    return df, flood_data
+
 
 def is_raining(df: pd.DataFrame) -> bool:
     return df.iloc[-1]["raining"] == 1
@@ -121,6 +130,13 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
     # select current flood from selected index
     flood_index -= 1
     current_flood = flood_data.iloc[flood_index]
+    end_season = int(
+        current_flood["starting_season"] + current_flood["flood_length"] - 1
+    )
+    seasons_during_flood = df[
+        (df["season"] >= current_flood["starting_season"])
+        & (df["season"] <= end_season)
+    ]
 
     # if chosen flood is not the earliest flood, calculate deltas
     if flood_index - 1 >= 0:
@@ -156,16 +172,11 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
         int(current_flood["flood_length"]),
         length_delta,
     )
-    if is_raining(df):
-        col3.metric(
-            "Current Season",
-            int(current_flood["starting_season"] + current_flood["flood_length"] - 1),
-        )
+
+    if flood_index + 1 == len(flood_data) and is_raining(df):
+        col3.metric("Current Season", end_season)
     else:
-        col3.metric(
-            "End Season",
-            int(current_flood["starting_season"] + current_flood["flood_length"] - 1),
-        )
+        col3.metric("End Season", end_season)
 
     col1, col2, col3 = st.columns(3)
     col1.metric(
@@ -184,48 +195,73 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
         pinto_total_delta,
     )
 
-    # graphing delta_ps for the current flood
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=list(
-                i + current_flood["starting_season"]
-                for i in range(len(current_flood["delta_p"]))
+    plot, data = st.tabs(["Plot", "Data"])
+
+    with plot:
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=list(
+                    i + current_flood["starting_season"]
+                    for i in range(len(current_flood["delta_p"]))
+                ),
+                y=current_flood["delta_p"],
+                mode="lines+markers",
+                name="Delta P",
+                marker=dict(color="rgba(70, 130, 180, 0.75)"),
+            )
+        )
+        annotation = "Delta P: <span style='color:#90EE90'>{}</span><br><span style='color:#90EE90'>Season {}</span>"
+        fig.add_annotation(
+            x=current_flood["starting_season"] + current_flood["flood_length"] - 1,
+            y=current_flood["delta_p"][-1],
+            text=annotation.format(
+                millify(current_flood["delta_p"][-1], 2),
+                current_flood["starting_season"] + current_flood["flood_length"] - 1,
             ),
-            y=current_flood["delta_p"],
-            mode="lines",
-            name="Delta P",
+            showarrow=False,
+            bgcolor="rgba(70, 130, 180, 0.25)",
+            bordercolor="black",
+            borderwidth=0,
+            borderpad=2,
+            yshift=-25,
         )
-    )
-    annotation = "Latest Delta P: <span style='color:#90EE90'>{}</span><br><span style='color:gray'>Season {}</span>"
-    fig.add_annotation(
-        x=current_flood["starting_season"] + current_flood["flood_length"] - 1,
-        y=current_flood["delta_p"][-1],
-        text=annotation.format(
-            millify(current_flood["delta_p"][-1], 2),
-            current_flood["starting_season"] + current_flood["flood_length"] - 1,
-        ),
-        showarrow=True,
-    )
-    fig.update_xaxes(title_text="Seasons")
-    fig.update_yaxes(title_text="Delta Pintos")
-    fig.update_layout(title="Time Weighted Delta Pinto for Current Flood")
-    st.plotly_chart(fig)
+        fig.update_xaxes(title_text="Seasons")
+        fig.update_yaxes(title_text="Delta Pintos")
+        fig.update_layout(title="Time Weighted Delta Pinto for Current Flood")
+        st.plotly_chart(fig)
+    with data:
+        to_display = seasons_during_flood[
+            [
+                "season",
+                "price",
+                "flood_silo_pinto",
+                "flood_field_pinto",
+                "total_flood_pinto",
+                "delta_p",
+            ]
+        ].copy()
+        format = "{:,.1f}".format
+        to_display["flood_silo_pinto"] = to_display["flood_silo_pinto"].map(format)
+        to_display["flood_field_pinto"] = to_display["flood_field_pinto"].map(format)
+        to_display["total_flood_pinto"] = to_display["total_flood_pinto"].map(format)
+        to_display["delta_p"] = to_display["delta_p"].map(format)
+
+        to_display = to_display.rename(
+            columns={
+                "season": "Season",
+                "price": "Price",
+                "flood_silo_pinto": "Sold to Silo",
+                "flood_field_pinto": "Sold to Field",
+                "total_flood_pinto": "Total Pinto Sold",
+                "delta_p": "Time Weighted Delta Pinto",
+            },
+        )[::-1]
+        st.dataframe(to_display, hide_index=True)
 
 
-def main(df: pd.DataFrame, flood_data: pd.DataFrame):
-    st.title("🫘 Pinto Flood Analysis")
-
-    with st.popover("Disclaimers"):
-        st.warning(
-            "This application is for informational purposes only and is not financial advice."
-        )
-        st.warning(
-            "Floods only occur when A) a dollar exceeds 1$ after a season and "
-            "B) when the pod rate goes above 5%"
-            "\n"
-            "This application does not consider condition B yet (which has not hit yet)."
-        )
+def main():
+    st.title("🌊 Flood Analysis")
 
     st.markdown(
         "This app conducts preliminary analysis on flood data from the "
@@ -236,8 +272,13 @@ def main(df: pd.DataFrame, flood_data: pd.DataFrame):
 
     overview, flood_analysis = st.tabs(["Overview", "Flood Analysis"])
 
+    df, flood_data = get_data()
+
     with overview:
         general_flood_data(df, flood_data)
 
     with flood_analysis:
         current_flood(df, flood_data)
+
+
+main()
