@@ -1,9 +1,8 @@
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from millify import millify
-
 from data import PINTOSTALK, calculate_flood_details, gather_data
+from millify import millify
 
 
 @st.cache_data(ttl="30min", show_spinner="Getting Data..")
@@ -115,7 +114,7 @@ def general_flood_data(df: pd.DataFrame, flood_data: pd.DataFrame):
 
 def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
     if is_raining(df):
-        st.subheader("🌊 Currently Flooding")
+        st.subheader("🌧️ Currently Flooding")
     else:
         last_flood_season = int(df[df["raining"] == 1].iloc[0]["season"])
         st.subheader(f"🌱 Last Flood during season {last_flood_season}")

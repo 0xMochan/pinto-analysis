@@ -28,6 +28,18 @@ def disclaimers():
 def main():
     """This drives the entire streamlit application"""
 
+    st.set_page_config(
+        page_title="Pinto Data Analysis",
+        page_icon="🫘",
+        layout="wide",
+        initial_sidebar_state="expanded",
+        menu_items={
+            "Get Help": "https://pinto.money/discord",
+            "Report a bug": "https://github.com/0xMochan/pinto-analysis/issues",
+            "About": "This app showcases some data analysis on the Pinto Protocol",
+        },
+    )
+
     latest_season = get_data()
 
     with st.sidebar:
@@ -42,12 +54,15 @@ def main():
             "🏷️ **Current Price** ・ ${:.2f}".format(float(latest_season["price"]))
         )
         st.divider()
-        st.subheader("Links")
+        st.subheader("App Links")
+        st.markdown("- [Github](https://github.com/0xMochan/pinto-analysis)\n")
+        st.divider()
+        st.subheader("Pinto Links")
         st.markdown(
-            "- [Pinto Protocol](https://pinto.money)\n"
-            "- [Pinto Docs](https://docs.pinto.money)\n"
-            "- [Pinto Github](https://github.com/pinto-org/protocol)\n"
-            "- [Pinto Discord](https://pinto.money/discord)"
+            "- [Protocol](https://pinto.money)\n"
+            "- [Docs](https://docs.pinto.money)\n"
+            "- [Github](https://github.com/pinto-org/protocol)\n"
+            "- [Discord](https://pinto.money/discord)"
         )
         st.divider()
         st.markdown("*By [0xMochan](https://twitter.com/0xMochan)*")
