@@ -787,7 +787,7 @@ wheels = [
 ]
 
 [[package]]
-name = "pinto-portfolio"
+name = "pinto-analysis"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
