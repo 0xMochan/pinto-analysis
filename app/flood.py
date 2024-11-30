@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from millify import millify
 
-from data import PINTOSTALK, calculate_flood_details, gather_data
+from app.data import PINTOSTALK, calculate_flood_details, gather_data
 
 
 @st.cache_data(ttl="30min", show_spinner="Getting Data..")
