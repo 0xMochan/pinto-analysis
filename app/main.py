@@ -1,7 +1,7 @@
 import streamlit as st
 from st_copy_to_clipboard import st_copy_to_clipboard
 
-from pinto_analysis.data import PINTOSTALK, get_latest_season
+from data import PINTOSTALK, get_latest_season
 
 
 @st.cache_data(ttl="30min", show_spinner="Getting Data..")
