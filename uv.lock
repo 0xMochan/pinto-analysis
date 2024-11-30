@@ -1142,11 +1142,6 @@ dependencies = [
     { name = "subgrounds" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "pinto-analysis" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "ipykernel", specifier = ">=6.29.5" },
