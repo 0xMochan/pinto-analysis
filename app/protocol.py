@@ -18,12 +18,12 @@ def main():
     metrics(
         M("Price", f"${latest_season['price']:.6f}"),
         M("Marketcap", "${}".format(millify(latest_season["market_cap"], 2))),
-        M("Liquidity", "${}".format(millify(latest_season["market_cap"], 2))),
+        # M("Liquidity", "${}".format(millify(latest_season["market_cap"], 2))),
     )
     metrics(
         M("Season", latest_season["season"]),
         M("Raining", latest_season["raining"]),
-        M("Price", f"${latest_season['price']:.6f}"),
+        # M("Price", f"${latest_season['price']:.6f}"),
         M("Flood Silo Pinto", millify(latest_season["flood_silo_pinto"], 2)),
     )
     metrics(
