@@ -1,15 +1,12 @@
 import streamlit as st
-from data import PINTOSTALK, get_latest_season
 from st_copy_to_clipboard import st_copy_to_clipboard
 
+from data import gather_data
 
-@st.cache_data(ttl="30min", show_spinner="Getting Data..")
-def get_data():
-    return get_latest_season(PINTOSTALK)
 
 
 def disclaimers():
-    with st.popover("Disclaimers"):
+    with st.popover("Disclaimers", use_container_width=True):
         st.warning(
             "This application is for informational purposes only and is not "
             "representative of financial advice. Please do your own research."
@@ -29,7 +26,7 @@ def main():
     """This drives the entire streamlit application"""
 
     st.set_page_config(
-        page_title="Pinto Data Analysis",
+        page_title="Entrypoint",
         page_icon="🫘",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -40,18 +37,19 @@ def main():
         },
     )
 
-    latest_season = get_data()
+    _, latest_season = gather_data()
 
     with st.sidebar:
-        st.title("🫘 Pinto Analysis")
-        left, right = st.columns(2)
+        left, right = st.columns(2, vertical_alignment="center")
         with left:
             disclaimers()
-        right.button("Refresh Data", on_click=st.cache_data.clear)
+        right.button(
+            "Refresh Data", on_click=st.cache_data.clear, use_container_width=True
+        )
         st.divider()
         st.markdown("🌱 **Current Season** ・ {}".format(int(latest_season["season"])))
         st.markdown(
-            "🏷️ **Current Price** ・ ${:.2f}".format(float(latest_season["price"]))
+            "🏷️ **Latest Price** ・ ${:.6f}".format(float(latest_season["price"]))
         )
         st.divider()
         st.subheader("App Links")
@@ -76,4 +74,11 @@ def main():
 
 if __name__ == "__main__":
     main()
-    st.navigation({"Data Apps": [st.Page("flood.py", title="🌊 Flood Analysis")]}).run()
+    st.navigation(
+        {
+            "Data Apps": [
+                st.Page("protocol.py", title="🏗️ Protocol Overview"),
+                st.Page("flood.py", title="🌊 Flood Analytics"),
+            ]
+        }
+    ).run()

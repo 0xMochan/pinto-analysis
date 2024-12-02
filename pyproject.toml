@@ -12,6 +12,7 @@ dependencies = [
     "streamlit>=1.40.2",
     "subgrounds>=1.9.1",
     "st-copy-to-clipboard>=0.1.6",
+    "pandas[parquet,performance]>=2.2.3",
 ]
 
 [dependency-groups]
