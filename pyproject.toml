@@ -13,6 +13,8 @@ dependencies = [
     "subgrounds>=1.9.1",
     "st-copy-to-clipboard>=0.1.6",
     "pandas[parquet,performance]>=2.2.3",
+    "watchdog>=6.0.0",
+    "pandera[mypy]>=0.21.1",
 ]
 
 [dependency-groups]

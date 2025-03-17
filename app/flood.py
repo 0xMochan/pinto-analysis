@@ -7,9 +7,57 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from data import calculate_flood_details, gather_data
+from data import gather_data
 from millify import millify
 from utils import M, metrics
+
+
+def calculate_flood_details(df: pd.DataFrame) -> pd.DataFrame:
+    """This function chunks and aggregates the seasons data into floods."""
+
+    # helpful total flood calculation
+    df["total_flood_pinto"] = df["flood_silo_pinto"] + df["flood_field_pinto"]
+
+    # We shift raining over to detect differences between raining regions
+    df["raining"] = df["raining"].astype(int)
+    df["flood_no"] = (df["raining"] != df["raining"].shift()).cumsum()
+    df["flood_length"] = 0
+
+    raining_chunks = df[df["raining"] == 1].groupby("flood_no")
+
+    # we aggregate based on specific functions for each field
+    aggregated_chunks = raining_chunks.agg(
+        {
+            "season": "first",
+            "flood_length": "size",
+            "price": "mean",
+            "flood_silo_pinto": "sum",
+            "flood_field_pinto": "sum",
+            "total_flood_pinto": "sum",
+            "delta_pinto": "sum",
+            "gm_reward": "sum",
+            "twa_minted_pinto": "sum",
+        }
+    )
+
+    # drop aggregated chunks with less than 2 seasons
+    aggregated_chunks = aggregated_chunks[aggregated_chunks["flood_length"] > 1]
+
+    # we re-index the dataframe to start from 1
+    aggregated_chunks.reset_index(drop=True, inplace=True)
+    aggregated_chunks.index = aggregated_chunks.index + 1
+
+    # remove one from flood length to not include the raining season
+    aggregated_chunks["flood_length"] -= 1
+
+    aggregated_chunks.rename(
+        columns={
+            "season": "raining_season",
+            "price": "average_price",
+        },
+        inplace=True,
+    )
+    return aggregated_chunks
 
 
 def is_raining(df: pd.DataFrame) -> bool:
@@ -104,13 +152,13 @@ def general_flood_data(df: pd.DataFrame, flood_data: pd.DataFrame):
 
         to_display = to_display.rename(
             columns={
-                "starting_season": "Starting Season",
+                "raining_season": "Raining Season",
                 "average_price": "Average Price",
                 "flood_silo_pinto": "Sold to Silo",
                 "flood_field_pinto": "Sold to Field",
                 "flood_length": "Number of Seasons",
                 "total_flood_pinto": "Total Pinto Sold",
-                "delta_p": "Time Weighted Delta Pinto",
+                "twa_delta_pinto": "Time Weighted Delta Pinto",
             },
         )[::-1]
 
@@ -146,12 +194,9 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
     # select current flood from selected index
     flood_index -= 1
     current_flood = flood_data.iloc[flood_index]
-    end_season = int(
-        current_flood["starting_season"] + current_flood["flood_length"] - 1
-    )
+    end_season = int(current_flood["raining_season"] + current_flood["flood_length"])
     seasons_during_flood = df[
-        (df["season"] >= current_flood["starting_season"])
-        & (df["season"] <= end_season)
+        (df["season"] >= current_flood["raining_season"]) & (df["season"] <= end_season)
     ]
 
     # if chosen flood is not the earliest flood, calculate deltas
@@ -167,7 +212,7 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
         pinto_total_delta = millify(
             current_flood["total_flood_pinto"] - last_flood["total_flood_pinto"], 2
         )
-        previous_flood_starting_season = int(last_flood["starting_season"])
+        previous_flood_raining_season = int(last_flood["raining_season"])
 
     # if chosen flood is the earliest flood, set deltas to None
     else:
@@ -175,13 +220,15 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
         pinto_silo_delta = None
         pinto_field_delta = None
         pinto_total_delta = None
-        previous_flood_starting_season = None
+        previous_flood_raining_season = None
 
+    raining_season = int(current_flood["raining_season"])
+    flood_length = int(current_flood["flood_length"])
     metrics(
         M(
-            "Starting Season",
-            int(current_flood["starting_season"]),
-            previous_flood_starting_season,
+            "Rainy Season",
+            raining_season,
+            previous_flood_raining_season,
         ),
         M(
             "Length of Flood",
@@ -189,12 +236,16 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
             length_delta,
         ),
         M(
+            "Flooding Seasons",
             (
-                "End Season"
+                (
+                    f"{raining_season+1}-{end_season}"
+                    if flood_length > 1
+                    else raining_season + 1
+                )
                 if not (flood_index + 1 == len(flood_data) and is_raining(df))
-                else "Current Season"
+                else f"{raining_season+1}-"
             ),
-            end_season,
         ),
     )
 
@@ -226,17 +277,17 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
                 x=seasons_during_flood["season"],
                 y=seasons_during_flood["twa_minted_pinto"],
                 mode="lines+markers",
-                name="TWAΔP",
-                marker=dict(color="rgba(70, 130, 180, 0.75)"),
+                name="TWA Minted Pinto",
+                marker=dict(color="rgba(34, 139, 34, 0.75)"),
             )
         )
         fig.add_trace(
             go.Scatter(
                 x=seasons_during_flood["season"],
-                y=seasons_during_flood["delta_p"],
+                y=seasons_during_flood["twa_delta_pinto"],
                 mode="lines+markers",
-                name="TWA Minted Pinto",
-                marker=dict(color="rgba(34, 139, 34, 0.75)"),
+                name="TWAΔP",
+                marker=dict(color="rgba(70, 130, 180, 0.75)"),
             )
         )
         fig.add_trace(
@@ -259,21 +310,15 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
         )
         annotation = (
             "TWAΔP: <span style='color:#90EE90'>{}</span><br>"
-            "TWA Minted Pinto: <span style='color:#90EE90'>{}</span><br>"
-            "Minted Flood Pinto: <span style='color:#90EE90'>{}</span><br>"
             "<span style='color:gray'>Season {}</span>"
         )
         latest_flood_season = seasons_during_flood.iloc[-1]
         fig.add_annotation(
-            x=current_flood["starting_season"] + current_flood["flood_length"] - 1,
-            y=latest_flood_season["delta_p"],
+            x=current_flood["raining_season"] + current_flood["flood_length"],
+            y=latest_flood_season["twa_delta_pinto"],
             text=annotation.format(
-                millify(latest_flood_season["delta_p"], 2),
-                millify(latest_flood_season["twa_minted_pinto"], 2),
-                millify(latest_flood_season["total_flood_pinto"], 2),
-                int(
-                    current_flood["starting_season"] + current_flood["flood_length"] - 1
-                ),
+                millify(latest_flood_season["twa_delta_pinto"], 2),
+                int(current_flood["raining_season"] + current_flood["flood_length"]),
             ),
             showarrow=False,
             bgcolor="rgba(0, 0, 139, 0.20)",
@@ -282,8 +327,30 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
             borderpad=4,
             yshift=-45,
         )
+        fig.add_annotation(
+            x=current_flood["raining_season"],
+            y=max(
+                seasons_during_flood[
+                    [
+                        "twa_delta_pinto",
+                        "twa_minted_pinto",
+                        "total_flood_pinto",
+                        "gm_reward",
+                    ]
+                ].max()
+            ),
+            text="Raining Season",
+            showarrow=False,
+            ax=0,
+            ay=-40,
+            bgcolor="rgba(255, 215, 0, 0.25)",
+            bordercolor="black",
+            borderwidth=1,
+            borderpad=4,
+            yshift=20,
+        )
         fig.update_xaxes(title_text="Seasons")
-        fig.update_yaxes(title_text="Delta Pintos")
+        fig.update_yaxes(title_text="Pinto")
         fig.update_layout(title="Pinto Stats during Flood Seasons")
 
         st.plotly_chart(fig)
@@ -293,8 +360,8 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
         fig.add_trace(
             go.Bar(
                 x=seasons_during_flood["season"],
-                y=seasons_during_flood["delta_supply"],
-                name="Delta Supply",
+                y=seasons_during_flood["delta_pinto"],
+                name="Instantaneous Delta Pinto",
             )
         )
         fig.update_xaxes(title_text="Seasons")
@@ -305,9 +372,9 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
             fig, on_select="rerun", selection_mode=["lasso", "points", "box"]
         )
         if points := selected["selection"]["point_indices"]:
-            t0 = int(points[0] + current_flood["starting_season"])
-            t1 = int(points[-1] + current_flood["starting_season"])
-            summed = seasons_during_flood.iloc[points]["delta_supply"].sum()
+            t0 = int(points[0] + current_flood["raining_season"])
+            t1 = int(points[-1] + current_flood["raining_season"])
+            summed = seasons_during_flood.iloc[points]["delta_pinto"].sum()
             with st.expander(
                 f"{summed:,.2f} Pinto distributed during Selected Season(s) {t0}-{t1}"
             ):
@@ -334,7 +401,7 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
                         pie_data,
                         values="Values",
                         names="Category",
-                        title=f"{season['delta_supply']: ,.2f} Pinto distributed during Season {int(season['season'])}",
+                        title=f"{season['delta_pinto']: ,.2f} Pinto distributed during Season {int(season['season'])}",
                     )
                     st.plotly_chart(fig)
 
@@ -346,19 +413,22 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
                 "flood_silo_pinto",
                 "flood_field_pinto",
                 "total_flood_pinto",
-                "delta_p",
+                "twa_delta_pinto",
                 "gm_reward",
-                # "twa_minted_pinto",
-                "delta_supply",
+                "delta_pinto",
             ]
         ].copy()
         format = "{:,.1f}".format
-        to_display["flood_silo_pinto"] = to_display["flood_silo_pinto"].map(format)
-        to_display["flood_field_pinto"] = to_display["flood_field_pinto"].map(format)
-        to_display["total_flood_pinto"] = to_display["total_flood_pinto"].map(format)
-        to_display["delta_p"] = to_display["delta_p"].map(format)
-        to_display["gm_reward"] = to_display["gm_reward"].map(format)
-        to_display["delta_supply"] = to_display["delta_supply"].map(format)
+        columns_to_format = [
+            "flood_silo_pinto",
+            "flood_field_pinto",
+            "total_flood_pinto",
+            "twa_delta_pinto",
+            "gm_reward",
+            "delta_pinto",
+        ]
+        to_display[columns_to_format] = to_display[columns_to_format].map(format)
+        to_display["pod_rate"] = seasons_during_flood["pod_rate"].map("{:.2%}".format)
 
         to_display = to_display.rename(
             columns={
@@ -367,35 +437,39 @@ def current_flood(df: pd.DataFrame, flood_data: pd.DataFrame):
                 "flood_silo_pinto": "Sold to Silo",
                 "flood_field_pinto": "Sold to Field",
                 "total_flood_pinto": "Total Pinto Sold",
-                "delta_p": "Time Weighted Average Delta Pinto",
+                "twa_delta_pinto": "Time Weighted Average Delta Pinto",
                 "gm_reward": "gm() Reward",
-                "delta_supply": "Delta Supply",
+                "delta_pinto": "Instantaneous Delta Pinto",
                 "twa_minted_pinto": "Time Weighted Average Minted Pinto",
+                "pod_rate": "Pod Rate",
             },
         )[::-1]
         st.dataframe(to_display, hide_index=True)
 
 
 def main():
-    st.title("🌊 Flood Analysis")
+    st.title("🌊 Flood Inspector")
 
     st.markdown(
-        "This app conducts preliminary analysis on flood data from the "
-        "[pinto.money](https://pinto.money) protocol. The data is sourced from the "
-        "[Pintostalk subgraph](https://graph.pinto.money/explorer/pintostalk) and uses "
-        "[subgrounds](https://github.com/0xPlaygrounds/subgrounds) for data manipulation."
+        """
+        The protocol manages Pinto supply during periods of high demand through a process called flooding. This process starts when a season's Time Weighted Average (TWA) deltaP is positive and the Pod Rate is above 5%. The first season is the raining season, if it continues, the protocol declares a flood.
+        
+        During flooding seasons, the protocol mints additional Pinto at the start of each season and sells them to the highest pinto shortage in the silo LP returning excess tokens back to rainstalk holders (flood silo returns). Additionally, up to 0.1% of the pinto supply worth of pods that grew from sown pinto before it began to rain become harvestable (flood field returns).
+
+        This page analyzes the seasonal data to determine the performance of floods on the Pinto Protocol.
+        """
     )
 
     overview, flood_analysis = st.tabs(["Overview", "Flood Analysis"])
 
-    df, _ = gather_data()
-    flood_data = calculate_flood_details(df)
+    data = gather_data()
+    flood_data = calculate_flood_details(data.df)
 
     with overview:
-        general_flood_data(df, flood_data)
+        general_flood_data(data.df, flood_data)
 
     with flood_analysis:
-        current_flood(df, flood_data)
+        current_flood(data.df, flood_data)
 
 
 main()

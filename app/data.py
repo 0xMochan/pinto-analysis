@@ -1,79 +1,137 @@
+from typing import NamedTuple
+
 import pandas as pd
+import pandera as pa
 import streamlit as st
+from pandera.typing import DataFrame, Series
 from subgrounds import Subgrounds
 
 # PINTO = "https://graph.pinto.money"
 PINTOSTALK = "https://graph.pinto.money/pintostalk"
 EXCHANGE = "https://graph.pinto.money/exchange"
 PROTOCOL = "0xD1A0D188E861ed9d15773a2F3574a2e94134bA8f"
+ALL = 100000
 
 
-def calculate_flood_details(df: pd.DataFrame) -> pd.DataFrame:
-    """This function chunks and aggregates the seasons data into floods."""
+class PintoSchema(pa.DataFrameModel):
+    datetime: Series[pd.DatetimeTZDtype]
+    timestamp: Series[int]
+    season: Series[int]
+    raining: Series[bool]
+    price: Series[float]
+    flood_silo_pinto: Series[float]
+    flood_field_pinto: Series[float]
+    twa_delta_pinto: Series[float]
+    delta_pinto: Series[float]
+    gm_reward: Series[float]
+    twa_minted_pinto: Series[float]
+    market_cap: Series[float]
+    pod_rate: Series[float]
+    temperature: Series[int]
+    pod_index: Series[float]
+    harvestable_index: Series[float]
+    sown_pinto: Series[float]
+    harvested_pods: Series[float]
+    blocks_to_soil_sold_out: Series[int]
+    delta_harvestable_index: Series[float]
+    delta_harvestable_pods: Series[float]
+    delta_harvested_pods: Series[float]
+    delta_issued_soil: Series[float]
+    delta_number_of_sowers: Series[int]
+    delta_number_of_sows: Series[int]
+    delta_pod_index: Series[float]
+    delta_pod_rate: Series[float]
+    delta_real_rate_of_return: Series[float]
+    delta_sown_pinto: Series[float]
+    delta_temperature: Series[int]
+    delta_unharvestable_pods: Series[float]
+    delta_soil: Series[float]
+    cum_number_of_sows: Series[int]
+    cum_issued_soil: Series[float]
+    cum_number_of_sowers: Series[int]
+    harvestable_pods: Series[float]
+    soil_sold_out: Series[bool]
+    soil: Series[float]
+    real_rate_of_return: Series[float]
+    unharvestable_pods: Series[float]
+    cum_pinto_minted: Series[float]
+    active_silo_farmers: Series[int]
+    delta_active_silo_farmers: Series[int]
+    delta_pinto_minted: Series[float]
+    delta_grown_stalk_per_season: Series[float]
+    delta_germinating_stalk: Series[float]
+    delta_deposited_pdv: Series[float]
+    delta_unclaimed_stalk: Series[float]
+    delta_roots: Series[float]
+    delta_stalk: Series[float]
+    deposited_pdv: Series[float]
+    germinating_stalk: Series[float]
+    grown_stalk_per_season: Series[float]
+    unclaimed_stalk: Series[float]
+    roots: Series[float]
+    stalk: Series[float]
 
-    # helpful total flood calculation
-    df["total_flood_pinto"] = df["flood_silo_pinto"] + df["flood_field_pinto"]
+    class Config:
+        dtype_backend = "pyarrow"
 
-    # We shift raining over to detect differences between raining regions
-    df["raining"] = df["raining"].astype(int)
-    df["flood_no"] = (df["raining"] != df["raining"].shift()).cumsum()
-    df["flood_length"] = 0
-    raining_chunks = df[df["raining"] == 1].groupby("flood_no")
 
-    # we aggregate based on specific functions for each field
-    aggregated_chunks = raining_chunks.agg(
-        {
-            "season": "first",
-            "flood_length": "size",
-            "price": "mean",
-            "flood_silo_pinto": "sum",
-            "flood_field_pinto": "sum",
-            "total_flood_pinto": "sum",
-            "delta_supply": "sum",
-            "gm_reward": "sum",
-            "twa_minted_pinto": "sum",
-        }
-    )
+class PlotsSchema(pa.DataFrameModel):
+    updated_at: Series[int]
+    created_at: Series[int]
+    source: Series[str]
+    season: Series[int]
+    pods: Series[float]
+    index: Series[int]
+    harvestable_pods: Series[float]
+    harvested_pods: Series[float]
+    fully_harvested: Series[bool]
+    beans_per_pod: Series[float]
+    farmer: Series[str]
 
-    # we re-index the dataframe to start from 1
-    aggregated_chunks.reset_index(drop=True, inplace=True)
-    aggregated_chunks.index = aggregated_chunks.index + 1
+    class Config:
+        dtype_backend = "pyarrow"
 
-    aggregated_chunks.rename(
-        columns={
-            "season": "starting_season",
-            "price": "average_price",
-        },
-        inplace=True,
-    )
-    return aggregated_chunks
+
+class Data(NamedTuple):
+    df: DataFrame[PintoSchema]
+    plots: DataFrame[PlotsSchema]
+
+    @property
+    def latest_season(self):
+        return self.df.iloc[-1]
 
 
 @st.cache_data(ttl="30min", show_spinner="Getting Data..")
-def gather_data() -> tuple[pd.DataFrame, pd.Series]:
+def gather_data() -> Data:
     """This function loads the subgraph and queries the data. Subgrounds automatically
     handles the pagination for us.
-
-    TODO: replace 100000 with ALL when subgrounds supports it.
     """
 
     with Subgrounds() as sg:
         pintostalk = sg.load_subgraph(PINTOSTALK)
-        args = {"first": 100000, "orderBy": "season", "orderDirection": "asc"}
-        seasons = pintostalk.Query.seasons(**args)
+        args = {"first": ALL, "orderBy": "season", "orderDirection": "asc"}
+        seasons = pintostalk.Query.seasons(where={"createdAt_gt": 0}, **args)
         fields = pintostalk.Query.fieldHourlySnapshots(
             where={"field": PROTOCOL}, **args
         )
         silos = pintostalk.Query.siloHourlySnapshots(where={"silo": PROTOCOL}, **args)
 
+        plots = pintostalk.Query.plots(
+            orderBy="createdAt",
+            orderDirection="desc",
+            where={"source": "SOW"},
+            first=ALL,
+        )
+
         fpath_to_column = [
+            (seasons.createdAt, "timestamp"),
             (seasons.season, "season"),
             (seasons.raining, "raining"),
             (seasons.price, "price"),
             (seasons.floodSiloBeans, "flood_silo_pinto"),
             (seasons.floodFieldBeans, "flood_field_pinto"),
-            (seasons.deltaB, "delta_p"),
-            (seasons.deltaBeans, "delta_supply"),
+            (seasons.deltaB, "twa_delta_pinto"),
+            (seasons.deltaBeans, "delta_pinto"),
             (seasons.incentiveBeans, "gm_reward"),
             (seasons.rewardBeans, "twa_minted_pinto"),
             (seasons.marketCap, "market_cap"),
@@ -133,10 +191,25 @@ def gather_data() -> tuple[pd.DataFrame, pd.Series]:
             (fields.realRateOfReturn, "real_rate_of_return"),
             (fields.unharvestablePods, "unharvestable_pods"),
             # (fields.updatedAt, ""),
+            (plots.id, "id"),
+            (plots.updatedAt, "updated_at"),
+            (plots.createdAt, "created_at"),
+            (plots.harvestAt, "harvest_at"),
+            (plots.source, "source"),
+            (plots.season, "season"),
+            (plots.pods, "pods"),
+            (plots.index, "index"),
+            (plots.harvestablePods, "harvestable_pods"),
+            (plots.harvestedPods, "harvested_pods"),
+            (plots.fullyHarvested, "fully_harvested"),
+            (plots.beansPerPod, "pinto_spent_per_pod"),
+            (plots.farmer.id, "farmer"),
         ]
         fpaths, columns = zip(*fpath_to_column)
 
-        [seasonal_df, silos_df, fields_df] = sg.query_df(fpaths, columns=columns)
+        [seasonal_df, silos_df, fields_df, plots_df] = sg.query_df(
+            fpaths, columns=columns
+        )
 
         # Merge seasonal_df and fields_df on 'season' and 'field_season'
         merged_df = pd.merge(
@@ -164,8 +237,8 @@ def gather_data() -> tuple[pd.DataFrame, pd.Series]:
         for column in [
             "flood_silo_pinto",
             "flood_field_pinto",
-            "delta_p",
-            "delta_supply",
+            "twa_delta_pinto",
+            "delta_pinto",
             "gm_reward",
             "twa_minted_pinto",
             "pod_index",
@@ -201,4 +274,24 @@ def gather_data() -> tuple[pd.DataFrame, pd.Series]:
         ]:
             merged_df[column] /= 10**6
 
-        return merged_df, merged_df.iloc[-1]
+        # createdAt -> timestamp
+        merged_df["datetime"] = pd.to_datetime(merged_df["timestamp"], unit="s")
+
+        # plots stuff
+        plots_df = plots_df.convert_dtypes(dtype_backend="pyarrow")
+        plots_df["updated_at"] = pd.to_datetime(plots_df["updated_at"], unit="s")
+        plots_df["created_at"] = pd.to_datetime(plots_df["created_at"], unit="s")
+        plots_df["harvest_at"] = pd.to_datetime(plots_df["harvest_at"], unit="s")
+
+        # apply decimals to specific columns
+        for column in [
+            "pods",
+            "pinto_spent_per_pod",
+            "index",
+            "harvestable_pods",
+            "harvested_pods",
+        ]:
+            plots_df[column] /= 10**6
+
+        # st.write(merged_df.dtypes)
+        return Data(merged_df, plots_df)

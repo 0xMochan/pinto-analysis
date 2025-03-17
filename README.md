@@ -11,3 +11,11 @@ Once installed, you can simply run the following to load the app!
 ```bash
 uv run streamlit run app/main.py
 ```
+
+## Plan
+- Add proper homepage
+- Add abouts page
+- Portfolio Viewer
+- Season Scroller
+- Field Analyzer
+  

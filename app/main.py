@@ -1,8 +1,69 @@
 import streamlit as st
+from data import gather_data
 from st_copy_to_clipboard import st_copy_to_clipboard
 
-from data import gather_data
 
+def custom_css():
+    st.html("""
+        <style>
+            footer {visibility: hidden;}
+            MainMenu {visibility: hidden;}
+            /*
+            @font-face {
+                font-family: Pinto;
+                font-weight: 500;
+                font-display: swap;
+                src: url(https://pinto.money/assets/Pinto-Regular-fAgL6fz7.woff2) format("woff2")
+            }
+
+            @font-face {
+                font-family: Pinto;
+                font-weight: 400;
+                font-display: swap;
+                src: url(https://pinto.money/assets/Pinto-Book-qJmluawK.woff2) format("woff2")
+            }
+
+            @font-face {
+                font-family: Pinto;
+                font-weight: 340;
+                font-display: swap;
+                src: url(https://pinto.money/assets/Pinto-Book-qJmluawK.woff2) format("woff2")
+            }
+
+            @font-face {
+                font-family: Pinto;
+                font-weight: 300;
+                font-display: swap;
+                src: url(https://pinto.money/assets/Pinto-Light-B9ltJaNi.woff2) format("woff2")
+            }
+
+            @font-face {
+                font-family: Pinto;
+                font-weight: 600;
+                font-display: swap;
+                src: url(https://pinto.money/assets/Pinto-Medium-SzILf3-D.woff2) format("woff2")
+            }
+
+            @font-face {
+                font-family: Roboto;
+                font-weight: 300;
+                font-display: swap;
+                src: url(https://pinto.money/assets/Roboto-Light-BW8nAIZg.ttf) format("truetype")
+            }
+
+            html, body, p, [class*="css"]  {
+                font-family: "Pinto", "Source Sans Pro", sans-serif;
+                font-weight: 340;
+                color: rgb(169, 162, 151);
+            }
+
+            h1, h2, h3 {
+                font-family: "Pinto", "Source Sans Pro", sans-serif;
+                font-weight: 300;
+            }
+            */
+        </style>
+    """)
 
 
 def disclaimers():
@@ -14,20 +75,14 @@ def disclaimers():
         st.warning(
             "This application is in active development and the data may be inaccurate."
         )
-        st.warning(
-            "Floods only occur when A) a dollar exceeds 1$ after a season and "
-            "B) when the pod rate goes above 5%"
-            "\n"
-            "This application does not consider condition B yet (which has not hit yet)."
-        )
 
 
 def main():
     """This drives the entire streamlit application"""
 
     st.set_page_config(
-        page_title="Entrypoint",
-        page_icon="🫘",
+        page_title="Pinto Analytics",
+        page_icon="https://pinto.money/assets/PINTO-Dzfg2sTm.png",
         layout="wide",
         initial_sidebar_state="expanded",
         menu_items={
@@ -37,7 +92,12 @@ def main():
         },
     )
 
-    _, latest_season = gather_data()
+    custom_css()
+
+    data = gather_data()
+
+    with st.expander("Data Debug"):
+        st.write(data.latest_season)
 
     with st.sidebar:
         left, right = st.columns(2, vertical_alignment="center")
@@ -47,38 +107,41 @@ def main():
             "Refresh Data", on_click=st.cache_data.clear, use_container_width=True
         )
         st.divider()
-        st.markdown("🌱 **Current Season** ・ {}".format(int(latest_season["season"])))
         st.markdown(
-            "🏷️ **Latest Price** ・ ${:.6f}".format(float(latest_season["price"]))
+            "🌱 **Current Season** ・ {}".format(int(data.latest_season["season"]))
         )
-        st.divider()
-        st.subheader("App Links")
-        st.markdown("- [Github](https://github.com/0xMochan/pinto-analysis)\n")
-        st.divider()
-        st.subheader("Pinto Links")
+        price = float(data.latest_season["price"])
+        color = "#72be95" if price > 1 else "#e57373"
         st.markdown(
-            "- [Protocol](https://pinto.money)\n"
-            "- [Docs](https://docs.pinto.money)\n"
-            "- [Github](https://github.com/pinto-org/protocol)\n"
-            "- [Discord](https://pinto.money/discord)"
+            "<p>🏷️ <strong>Seasonal Price</strong> ・ "
+            f'<span style="color:{color}">$ {price:.6f}</span></p>',
+            unsafe_allow_html=True,
         )
         st.divider()
         st.markdown("*By [0xMochan](https://twitter.com/0xMochan)*")
-        st.markdown("Support my work via my EVM-compatible address")
+        st.markdown("Shoot me some Pinto if you liked this app!")
         st.markdown("`0xe23cE0f5dC9D3DA1FD69d3A169F5596F5A5669AA`")
-        col1, col2 = st.columns(2)
-        with col1:
-            st_copy_to_clipboard("0xe23cE0f5dC9D3DA1FD69d3A169F5596F5A5669AA")
-        col2.html("<span style='color: grey'>Click to copy to clipboard!</span>")
+        st_copy_to_clipboard(
+            "0xe23cE0f5dC9D3DA1FD69d3A169F5596F5A5669AA",
+            before_copy_label="📋 Click to copy!",
+            after_copy_label="✅ Copied!",
+        )
+
+    st.navigation(
+        {
+            "Home": [
+                st.Page("main.py", title="🏡 Homepage"),
+                st.Page("about.py", title="📚 About"),
+            ],
+            "Data Apps": [
+                st.Page("protocol.py", title="🏗️ Protocol Overview"),
+                st.Page("flood.py", title="🌊 Flood Inspector"),
+                st.Page("field.py", title="🌾 Field Analytics"),
+                # st.Page("portfolio.py", title="📊 Portfolio Viewer"),
+            ],
+        }
+    ).run()
 
 
 if __name__ == "__main__":
     main()
-    st.navigation(
-        {
-            "Data Apps": [
-                st.Page("protocol.py", title="🏗️ Protocol Overview"),
-                st.Page("flood.py", title="🌊 Flood Analytics"),
-            ]
-        }
-    ).run()
